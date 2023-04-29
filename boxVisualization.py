@@ -176,8 +176,8 @@ def main():
         gluOrtho2D(-10, 10, -10, 10)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        glRotatef(axis_dx, 0, 1, 0)
-        glRotatef(axis_dy, 1, 0, 0)
+        glRotatef(axis_dy+35.264, 1, 0, 0)
+        glRotatef(axis_dx-45, 0, 1, 0)
         draw_axes()
 
         glViewport(0, 0, display[0], display[1])
@@ -187,8 +187,8 @@ def main():
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         glTranslatef(0.0, 0.0, -5)
-        glRotatef(cube_dx, 0, 1, 0)
-        glRotatef(cube_dy, 1, 0, 0)
+        glRotatef(cube_dy+35.264, 1, 0, 0)
+        glRotatef(cube_dx-45, 0, 1, 0)
         draw_cube(10, 10, 10)
 
         pygame.display.flip()
