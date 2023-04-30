@@ -124,6 +124,15 @@ def draw_axes():
     glVertex3f(0.0, 0.0, 2.5)
     glEnd()
 
+def draw_text_dims(text_dict, display, font):
+    for text in text_dict:
+        textSurface = font.render(f'{text["title"]}{text["text"]}', True, text['color']).convert_alpha()
+        textData = pygame.image.tostring(textSurface, "RGBA", True)
+        glWindowPos2d(text['x'], display[1] - text['y'] - textSurface.get_height())
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDrawPixels(textSurface.get_width(), textSurface.get_height(), GL_RGBA, GL_UNSIGNED_BYTE, textData)
+
 def main():
     pygame.init()
     display = (1200, 800)
@@ -144,16 +153,27 @@ def main():
     cube_dx, cube_dy = 0, 0
     axis_dx, axis_dy = 0, 0
     zoom = 5
+    font = pygame.font.SysFont('arial', 20)
+    text_dict = [{'title': 'Height: ', 'text': str(height), 'color': (0, 0, 0), 'x': 0, 'y': 0},
+                {'title': 'Length: ', 'text': str(length), 'color': (0, 0, 0), 'x': 0, 'y': 25},
+                {'title': 'Width: ', 'text': str(width), 'color': (0, 0, 0), 'x': 0, 'y': 50}]
+    selected_text = None
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     drag = True
                     mouse_position = pygame.mouse.get_pos()
+                    for text in text_dict:
+                        text_rect = font.render(f'{text["title"]}{text["text"]}', True, text['color']).get_rect(topleft=(text['x'], text['y']))
+                        if text_rect.collidepoint(mouse_position):
+                            selected_text = text
+                            selected_text['color'] = (0, 255, 0)  # Change color to green
+                        else:
+                            text['color'] = (0, 0, 0)  # Change color to black
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     drag = False
@@ -162,6 +182,23 @@ def main():
                     zoom -= 0.1
                 else:
                     zoom += 0.1
+            elif event.type == pygame.KEYDOWN:
+                if selected_text is not None and event.key == pygame.K_RETURN:
+                    selected_text['text'] = f"{selected_text['text']}"
+                    selected_text['color'] = (0, 0, 0)  # Reset color to black
+                    if selected_text['title'] == 'Height: ':
+                        height = float(selected_text['text'])
+                    elif selected_text['title'] == 'Length: ':
+                        length = float(selected_text['text'])
+                    elif selected_text['title'] == 'Width: ':
+                        width = float(selected_text['text'])
+                    selected_text = None
+                elif event.key == pygame.K_BACKSPACE:
+                    selected_text['text'] = selected_text['text'][:-1]  # Remove last character
+                elif event.key == pygame.K_RETURN:
+                    pass
+                else:
+                    selected_text['text'] += event.unicode  # Add typed character
 
         if drag:
             new_mouse_position = pygame.mouse.get_pos()
@@ -198,6 +235,8 @@ def main():
         glRotatef(cube_dy+35.264, 1, 0, 0)
         glRotatef(cube_dx-45, 0, 1, 0)
         draw_cube(height, length, width, 10, 10, 10)
+
+        draw_text_dims(text_dict, display, font)
 
         pygame.display.flip()
 
