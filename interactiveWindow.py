@@ -1,13 +1,18 @@
 import pygame
+import numpy as np
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
-def draw_cube(height, length, width, num_height_subdivisions=1, num_length_subdivisions=1, num_width_subdivisions=1):
-    # Set the color of all faces to gray
-    glColor3f(0.5, 0.5, 0.5)
+def draw_prism(height, length, width, num_height_subdivisions, num_length_subdivisions, num_width_subdivisions, mouse_position):
+    # Calculate mouse ray origin and direction
+    mouse_x, mouse_y = mouse_position
+    viewport = glGetIntegerv(GL_VIEWPORT)
+    mouse_pos_3d = gluUnProject(mouse_x, viewport[3] - mouse_y, 0.0, glGetDoublev(GL_MODELVIEW_MATRIX), glGetDoublev(GL_PROJECTION_MATRIX), viewport)
+    mouse_pos_3d_end = gluUnProject(mouse_x, viewport[3] - mouse_y, 1.0, glGetDoublev(GL_MODELVIEW_MATRIX), glGetDoublev(GL_PROJECTION_MATRIX), viewport)
+    mouse_ray = np.array(mouse_pos_3d_end) - np.array(mouse_pos_3d)
+    mouse_ray /= np.linalg.norm(mouse_ray)
 
     # Define vertices and indices
-
     # Vertices defined in (length, height, width) order
     vertices = [(-length / 2, -height / 2, -width / 2),
                 (length / 2, -height / 2, -width / 2),
@@ -24,13 +29,56 @@ def draw_cube(height, length, width, num_height_subdivisions=1, num_length_subdi
                (5, 4, 7, 6),
                (4, 5, 1, 0),
                (3, 2, 6, 7)]
+    
+    # Calculate face normals and directions facing the screen
+    face_normals = []
+    for face in indices:
+        v0, v1, v2, _ = [vertices[i] for i in face]
+        normal = np.cross(np.array(v1) - np.array(v0), np.array(v2) - np.array(v0))
+        face_normals.append(normal)
 
-    # Draw the faces
-    glBegin(GL_QUADS)
-    for index_face in indices:
-        for vertex_ind in index_face:
+    face_directions = np.dot(face_normals, mouse_ray)
+
+    def ray_triangle_intersection(ray_origin, ray_direction, v0, v1, v2):
+    # Compute edge vectors
+        e1 = np.array(v1) - np.array(v0)
+        e2 = np.array(v2) - np.array(v0)
+
+        # Compute determinant and check if ray is parallel to triangle
+        p = np.cross(ray_direction, e2)
+        det = np.dot(e1, p)
+        if abs(det) < 1e-8:
+            return None
+
+        # Compute barycentric coordinates and check if intersection point is inside triangle
+        t = np.array(ray_origin) - np.array(v0)
+        u = np.dot(t, p) / det
+        if u < 0 or u > 1:
+            return None
+
+        q = np.cross(t, e1)
+        v = np.dot(ray_direction, q) / det
+        if v < 0 or u + v > 1:
+            return None
+
+        # Compute intersection point and return it
+        distance = np.dot(e2, q) / det
+        intersection_point = np.array(ray_origin) + distance * np.array(ray_direction)
+        return tuple(intersection_point)
+    
+
+    # Draw the faces, coloring yellow on click
+    for ind, face in enumerate(indices):
+        if face_directions[ind] < 0:
+            continue
+        if ray_triangle_intersection(mouse_pos_3d, mouse_ray, vertices[face[0]], vertices[face[1]], vertices[face[2]]) or ray_triangle_intersection(mouse_pos_3d, mouse_ray, vertices[face[2]], vertices[face[3]], vertices[face[0]]):
+            glColor3f(1.0, 1.0, 0)
+        else:
+            glColor3f(0.5, 0.5, 0.5)
+        glBegin(GL_QUADS)
+        for vertex_ind in face:
             glVertex3fv(vertices[vertex_ind])
-    glEnd()
+        glEnd()
 
     # Set the color of edges to black and adjust polygon mode to get desired projection mode
     glColor3f(0, 0, 0)
@@ -103,7 +151,7 @@ def draw_cube(height, length, width, num_height_subdivisions=1, num_length_subdi
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
 def draw_axes():
-        # Draw the x-axis
+    # Draw the x-axis
     glColor3f(1.0, 0.0, 0.0)
     glBegin(GL_LINES)
     glVertex3f(0.0, 0.0, 0.0)
@@ -124,7 +172,7 @@ def draw_axes():
     glVertex3f(0.0, 0.0, 2.5)
     glEnd()
 
-def draw_text_dims(text_dict, display, font):
+def draw_text(text_dict, display, font):
     for text in text_dict:
         textSurface = font.render(f'{text["title"]}{text["text"]}', True, text['color']).convert_alpha()
         textData = pygame.image.tostring(textSurface, "RGBA", True)
@@ -138,26 +186,28 @@ def main():
     display = (1200, 800)
     pygame.display.set_mode(display, pygame.DOUBLEBUF | pygame.OPENGL)
     pygame.display.set_caption('Geometry, Mesh, and Boundary Conditions')
-    length = 1
     height = 5
+    length = 1
     width = 10
-
-    gluPerspective(45, (display[0]/display[1]), 0.1, 50000.0)
-
-    glClearColor(1.0, 1.0, 1.0, 1.0)
-
-    clock = pygame.time.Clock()
-
+    num_height_subdivisions = 10
+    num_length_subdivisions = 5
+    num_width_subdivisions = 20
     drag = False
-    mouse_position = None
     cube_dx, cube_dy = 0, 0
     axis_dx, axis_dy = 0, 0
     zoom = 5
     font = pygame.font.SysFont('arial', 20)
-    text_dict = [{'title': 'Height: ', 'text': str(height), 'color': (0, 0, 0), 'x': 0, 'y': 0},
-                {'title': 'Length: ', 'text': str(length), 'color': (0, 0, 0), 'x': 0, 'y': 25},
-                {'title': 'Width: ', 'text': str(width), 'color': (0, 0, 0), 'x': 0, 'y': 50}]
+    text_dict = [{'title': 'Y Dimension: ', 'text': str(height), 'color': (0, 0, 0), 'x': 0, 'y': 0},
+                {'title': 'X Dimension: ', 'text': str(length), 'color': (0, 0, 0), 'x': 0, 'y': 25},
+                {'title': 'Z Dimension: ', 'text': str(width), 'color': (0, 0, 0), 'x': 0, 'y': 50},
+                {'title': 'Y subdivisions: ', 'text': str(num_height_subdivisions), 'color': (0, 0, 0), 'x': 0, 'y': 75},
+                {'title': 'X subdivisions: ', 'text': str(num_length_subdivisions), 'color': (0, 0, 0), 'x': 0, 'y': 100},
+                {'title': 'Z subdivisions: ', 'text': str(num_width_subdivisions), 'color': (0, 0, 0), 'x': 0, 'y': 125}]
     selected_text = None
+    mouse_position = (0, 0)
+
+    glClearColor(1.0, 1.0, 1.0, 1.0)
+    clock = pygame.time.Clock()
 
     while True:
         for event in pygame.event.get():
@@ -186,12 +236,18 @@ def main():
                 if selected_text is not None and event.key == pygame.K_RETURN:
                     selected_text['text'] = f"{selected_text['text']}"
                     selected_text['color'] = (0, 0, 0)  # Reset color to black
-                    if selected_text['title'] == 'Height: ':
+                    if selected_text['title'] == 'Y Dimension: ':
                         height = float(selected_text['text'])
-                    elif selected_text['title'] == 'Length: ':
+                    elif selected_text['title'] == 'X Dimension: ':
                         length = float(selected_text['text'])
-                    elif selected_text['title'] == 'Width: ':
+                    elif selected_text['title'] == 'Z Dimension: ':
                         width = float(selected_text['text'])
+                    elif selected_text['title'] == 'Y subdivisions: ':
+                        num_height_subdivisions = int(selected_text['text'])
+                    elif selected_text['title'] == 'X subdivisions: ':
+                        num_length_subdivisions = int(selected_text['text'])
+                    elif selected_text['title'] == 'Z subdivisions: ':
+                        num_width_subdivisions = int(selected_text['text'])
                     selected_text = None
                 elif event.key == pygame.K_BACKSPACE:
                     selected_text['text'] = selected_text['text'][:-1]  # Remove last character
@@ -234,12 +290,11 @@ def main():
         glTranslatef(0.0, 0.0, -max(length, height, width)-zoom)
         glRotatef(cube_dy+35.264, 1, 0, 0)
         glRotatef(cube_dx-45, 0, 1, 0)
-        draw_cube(height, length, width, 10, 10, 10)
+        draw_prism(height, length, width, num_height_subdivisions, num_length_subdivisions, num_width_subdivisions, mouse_position)
 
-        draw_text_dims(text_dict, display, font)
+        draw_text(text_dict, display, font)
 
         pygame.display.flip()
-
         clock.tick(60)
 
 if __name__ == "__main__":
